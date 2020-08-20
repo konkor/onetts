@@ -29,184 +29,190 @@ const txt = "USAGE: [\"TEXT\" |] onetts [\"TEXT\" | TEXT_FILE] [-o OUT_FILE | ST
 const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0';
 
 let DEBUGGING = false;
+let TMPDIR = GLib.get_tmp_dir () + "/onetts/";
 let stdin, stdout;
 let uris = [], output_file;
 let fnames = [];
 let i, s;
 
 var Converter = new Lang.Class ({
-    Name: 'Converter',
-    Extends: Gio.Application,
+  Name: 'Converter',
+  Extends: Gio.Application,
 
-    _init: function () {
-        GLib.set_prgname ("onetts");
-        this.parent ({
-            application_id: "org.konkor.onetts",
-            flags: Gio.ApplicationFlags.HANDLES_COMMAND_LINE
-        });
-        GLib.set_application_name ("OneTTS");
-    },
+  _init: function () {
+    GLib.set_prgname ("onetts");
+    this.parent ({
+      application_id: "org.konkor.onetts",
+      flags: Gio.ApplicationFlags.HANDLES_COMMAND_LINE
+    });
+    GLib.set_application_name ("OneTTS");
+  },
 
-    vfunc_startup: function() {
-        this.parent();
-        this.hold ();
-    },
+  vfunc_startup: function() {
+    this.parent();
+    this.hold ();
+    if (!GLib.file_test (TMPDIR, GLib.FileTest.EXISTS))
+      GLib.mkdir_with_parents (TMPDIR, 484);
+  },
 
-    vfunc_command_line: function(cmd) {
-        let opt_output = false;
-        let text = this.get_stdin ();
-        for (i = 0; i < ARGV.length; i++) {
-            s = ARGV[i];
-            if ((s == "-h") || (s == "--help")) {
-                print (txt);
-                this.quit ();
-            } else if ((s == "-d") || (s == "--debug")) {
-                DEBUGGING = true;
-            } else if ((s == "-o") || (s == "--output")) {
-                //TODO: output file
-                opt_output = true;
-            } else if (opt_output) {
-                if (this._is_file (s)) output_file = s;
-                opt_output = false;
-            } else if (this._is_file (s)) {
-                uris.push (s);
-            } else text = s;
-        }
-        this.counter = 0;
-        if (text) this.convert (text);
-        else if (uris.length == 0) this.quit ();
+  vfunc_command_line: function(cmd) {
+    let opt_output = false;
+    let text = this.get_stdin ();
+    for (i = 0; i < ARGV.length; i++) {
+      s = ARGV[i];
+      if ((s == "-h") || (s == "--help")) {
+        print (txt);
+        this.quit ();
+      } else if ((s == "-d") || (s == "--debug")) {
+        DEBUGGING = true;
+      } else if ((s == "-o") || (s == "--output")) {
+        //TODO: output file
+        opt_output = true;
+      } else if (opt_output) {
+        if (this._is_file (s)) output_file = s;
+        opt_output = false;
+      } else if (this._is_file (s)) {
+        uris.push (s);
+      } else text = s;
+    }
+    this.counter = 0;
+    if (text) this.convert (text);
+    else if (uris.length == 0) this.quit ();
 
-        uris.forEach ((u) => {
-            this.convert (this.get_contents (u));
-        });
-        return 0;
-    },
+    uris.forEach ((u) => {
+      this.convert (this.get_contents (u));
+    });
+    return 0;
+  },
 
-    convert: function (text) {
-      let parts = [], sparts = [];
-      if (!text) return;
-      //text = text.replace (/[\r\n]/gi," ");
-      text = text.replace (/[\s\s+]/gi," ").trim ();
-      text = text.replace (/\s+/gi," ");
-      if (!text) return;
-      parts = this.split (text, null);
-      parts.forEach ((p) => {
-        this.process (p);
-      });
-    },
+  convert: function (text) {
+    let parts = [], sparts = [];
+    if (!text) return;
+    //text = text.replace (/[\r\n]/gi," ");
+    text = text.replace (/[\s\s+]/gi," ").trim ();
+    text = text.replace (/\s+/gi," ");
+    if (!text) return;
+    parts = this.split (text, null);
+    parts.forEach ((p) => {
+    this.process (p);
+    });
+  },
 
-    split: function (text, separator) {
-      let parts = [], sep = "", part = "", p = "", i = 0;
-      text = text.trim();
-      if (text.length < 99) {
-        return [text];
+  split: function (text, separator) {
+    let parts = [], sep = "", part = "", p = "", i = 0;
+    text = text.trim();
+    if (text.length < 99) {
+      return [text];
+    }
+    separator = this.get_separator (separator);
+    while (separator && (text.indexOf (separator) == -1)) separator = this.get_separator (separator);
+    if (!separator) {
+      print ("!!!No separator anymore for:", text);
+      while (i < text.length) {
+        parts.push (text.substring (i, i + 99));
+        i += 99;
       }
-      separator = this.get_separator (separator);
-      while (separator && (text.indexOf (separator) == -1)) separator = this.get_separator (separator);
-      if (!separator) {
-        print ("!!!No separator anymore for:", text);
-        while (i < text.length) {
-          parts.push (text.substring (i, i + 99));
-          i += 99;
-        }
-      } else {
-        i = text.indexOf (separator);
-        //print ("index of \"" + separator + "\" is " + i);
-        while (i > -1) {
-          p = text.substring (0, i + separator.length);
-          text = text.substring (i + separator.length);
-          //print ("PART:\n", p);
-          //print ("TEXT:\n", text);
-          if (p.length > 99) {
-            if (part) parts.push (part); part = "";
-            this.split (p, separator).forEach ((s) => {parts.push (s)});
-          } else {
-            if (part == "") part = p;
+    } else {
+      i = text.indexOf (separator);
+      //print ("index of \"" + separator + "\" is " + i);
+      while (i > -1) {
+        p = text.substring (0, i + separator.length);
+        text = text.substring (i + separator.length);
+        //print ("PART:\n", p);
+        //print ("TEXT:\n", text);
+        if (p.length > 99) {
+          if (part) parts.push (part); part = "";
+          this.split (p, separator).forEach ((s) => {parts.push (s)});
+        } else {
+          if (part == "") part = p;
+          else {
+            if ((part + p).length < 100) part = part + p;
             else {
-              if ((part + p).length < 100) part = part + p;
-              else {
-                parts.push (part);
-                part = p;
-              }
+              parts.push (part);
+              part = p;
             }
           }
-          if (text.length < 100) i = -1;
-          else i = text.indexOf (separator);
-          //print ("next index is", i);
         }
-        if (part) parts.push (part);
-        if (text) if (text.length > 99) this.split (text, separator).forEach ((s) => {parts.push (s)});
-        else parts.push (text);
+        if (text.length < 100) i = -1;
+        else i = text.indexOf (separator);
+        //print ("next index is", i);
       }
-      return parts;
-    },
-
-    get_separator: function (separator) {
-      let separators = [". ", "? ", "! ", "; ", ", ", ": ", " - ", " & ", " and ", " but ", " so ", " because ", ".", "?", "!", ",", ":", "-", "+", " of ", " " ];
-      let sep = "", i = -1;
-      if (!separator) return separators[0];
-      i = separators.indexOf (separator);
-      if (i < 0) return sep;
-      if (i < separators.length) sep = separators[i + 1];
-      return sep;
-    },
-
-    process: function (text) {
-      let guid = Gio.dbus_generate_guid ();
-      fnames.push (guid);
-      debug (text);
-      fetch ("http://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q="+ text + "&tl=En-us",null,null,guid, (d,res,guid) => {
-        debug ("Respose:", res);
-        GLib.file_set_contents (guid + ".mp3", d);
-        this.counter++;
-        if (this.counter == fnames.length) this.play ();
-      });
-      return;
-    },
-
-    play: function () {
-      //let i = 0;
-      GLib.spawn_command_line_sync ("gst-play-1.0 " + fnames.join (".mp3 ") + ".mp3");
-      //print ("gst-play-1.0 " + fnames.join (".mp3 "));
-      fnames.forEach ((f) => {
-        //GLib.spawn_command_line_sync ("gst-play-1.0 " + f + ".mp3");
-        let file = Gio.File.new_for_path (f + ".mp3");
-        //let copy = Gio.File.new_for_path (i + ".mp3"); i++;
-        try {
-          //file.copy (copy, 0, null, null);
-          //file.delete_async (100, null, null);
-          file.delete (null);
-        } catch (e) {}
-      });
-      this.release ();
-    },
-
-    get_contents: function (filename) {
-        let [res,data] = GLib.file_get_contents (filename);
-        if (res) return data.toString ();
-        return "";
-    },
-
-    set_contents: function (filename, text) {
-        //if (uris.length == 1 && !output_file) print (text);
-        return GLib.file_set_contents (filename, text);
-    },
-
-    _is_file: function (filename) {
-        if (!filename) return false;
-        let file = Gio.File.new_for_path (filename);
-        if (!file.query_exists (null)) return false;
-        return true;
-    },
-
-    get_stdin: function () {
-        let s = "";
-        let channel = GLib.IOChannel.unix_new(0);
-        if (channel.get_flags() != GLib.IOFlags.IS_READABLE) return s;
-        let [res, text] = channel.read_to_end();
-        if (text) s = text.toString();
-        return s;
+      if (part) parts.push (part);
+      if (text) if (text.length > 99) this.split (text, separator).forEach ((s) => {parts.push (s)});
+      else parts.push (text);
     }
+    return parts;
+  },
+
+  get_separator: function (separator) {
+    let separators = [". ", "? ", "! ", "; ", ", ", ": ", " - ", " & ", " and ", " but ", " so ", " because ", ".", "?", "!", ",", ":", "-", "+", " of ", " " ];
+    let sep = "", i = -1;
+    if (!separator) return separators[0];
+    i = separators.indexOf (separator);
+    if (i < 0) return sep;
+    if (i < separators.length) sep = separators[i + 1];
+    return sep;
+  },
+
+  process: function (text) {
+    let guid = Gio.dbus_generate_guid ();
+    fnames.push (guid);
+    debug (text);
+    fetch ("http://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q="+ text + "&tl=en",null,null,guid, (d,res,guid) => {
+      debug ("Respose:", res);
+      GLib.file_set_contents (TMPDIR + guid + ".mp3", d);
+      this.counter++;
+      if (this.counter == fnames.length) this.play ();
+    });
+  },
+
+  play: function () {
+    let i = 0, pls = "";
+    //GLib.spawn_command_line_sync ("gst-play-1.0 " + TMPDIR + fnames.join (".mp3 " + TMPDIR) + ".mp3");
+    //print ("gst-play-1.0 " + TMPDIR + fnames.join (".mp3 " + TMPDIR) + ".mp3");
+    fnames.forEach ((f) => {
+      pls += "file://" + TMPDIR + f + ".mp3\n";
+    });
+    GLib.file_set_contents (TMPDIR + "onetts" + Gio.dbus_generate_guid () + ".m3u", pls);
+    fnames.forEach ((f) => {
+      GLib.spawn_command_line_sync ("gst-play-1.0 " + TMPDIR + f + ".mp3");
+      let file = Gio.File.new_for_path (TMPDIR + f + ".mp3");
+      //let copy = Gio.File.new_for_path (i + ".mp3"); i++;
+      try {
+        //file.copy (copy, 0, null, null);
+        //file.delete_async (100, null, null);
+        file.delete (null);
+      } catch (e) {}
+    });
+    this.release ();
+  },
+
+  get_contents: function (filename) {
+    let [res,data] = GLib.file_get_contents (filename);
+    if (res) return data.toString ();
+    return "";
+  },
+
+  set_contents: function (filename, text) {
+    //if (uris.length == 1 && !output_file) print (text);
+    return GLib.file_set_contents (filename, text);
+  },
+
+  _is_file: function (filename) {
+    if (!filename) return false;
+    let file = Gio.File.new_for_path (filename);
+    if (!file.query_exists (null)) return false;
+    return true;
+  },
+
+  get_stdin: function () {
+    let s = "";
+    let channel = GLib.IOChannel.unix_new(0);
+    if (channel.get_flags() != GLib.IOFlags.IS_READABLE) return s;
+    let [res, text] = channel.read_to_end();
+    if (text) s = text.toString();
+    return s;
+  }
 });
 
 function fetch (url, agent, headers, guid, callback) {
@@ -217,13 +223,13 @@ function fetch (url, agent, headers, guid, callback) {
   Soup.Session.prototype.add_feature.call (session, new Soup.ProxyResolverDefault());
   let request = Soup.Message.new ("GET", url);
   if (headers) headers.forEach (h=>{
-    request.request_headers.append (h[0], h[1]);
+  request.request_headers.append (h[0], h[1]);
   });
   session.queue_message (request, (source, message) => {
-    if (callback) {
-      //callback (message.response_body.data.toString()?message.response_body.data:"", message.status_code);
-      callback (message.response_body_data.get_data (), message.status_code, guid);
-    }
+  if (callback) {
+    //callback (message.response_body.data.toString()?message.response_body.data:"", message.status_code);
+    callback (message.response_body_data.get_data (), message.status_code, guid);
+  }
   });
 }
 
