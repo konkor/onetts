@@ -29,6 +29,7 @@ const txt = "USAGE: [\"TEXT\" |] onetts [\"TEXT\" | TEXT_FILE] [-o OUT_FILE | ST
 const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0';
 
 let DEBUGGING = false;
+let KEEP = false;
 let TMPDIR = GLib.get_tmp_dir () + "/onetts/";
 let stdin, stdout;
 let uris = [], output_file;
@@ -65,6 +66,9 @@ var Converter = new Lang.Class ({
         this.quit ();
       } else if ((s == "-d") || (s == "--debug")) {
         DEBUGGING = true;
+      } else if ((s == "-k") || (s == "--keep")) {
+        //keep sound samples in temporary dir
+        KEEP = true;
       } else if ((s == "-o") || (s == "--output")) {
         //TODO: output file
         opt_output = true;
@@ -170,12 +174,13 @@ var Converter = new Lang.Class ({
     let i = 0, pls = "";
     //GLib.spawn_command_line_sync ("gst-play-1.0 " + TMPDIR + fnames.join (".mp3 " + TMPDIR) + ".mp3");
     //print ("gst-play-1.0 " + TMPDIR + fnames.join (".mp3 " + TMPDIR) + ".mp3");
-    fnames.forEach ((f) => {
+    if (KEEP) fnames.forEach ((f) => {
       pls += "file://" + TMPDIR + f + ".mp3\n";
     });
-    GLib.file_set_contents (TMPDIR + "onetts" + Gio.dbus_generate_guid () + ".m3u", pls);
+    if (KEEP) GLib.file_set_contents (TMPDIR + "onetts" + Gio.dbus_generate_guid () + ".m3u", pls);
     fnames.forEach ((f) => {
       GLib.spawn_command_line_sync ("gst-play-1.0 " + TMPDIR + f + ".mp3");
+      if (KEEP) return;
       let file = Gio.File.new_for_path (TMPDIR + f + ".mp3");
       //let copy = Gio.File.new_for_path (i + ".mp3"); i++;
       try {
